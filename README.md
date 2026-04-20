@@ -27,4 +27,5 @@ It is designed to be:
 
 ---
 
-## 📦 Installation
+## 📦 How to access?
+click this link: https://ctwei0206.github.io/Jianpu-Translator/
