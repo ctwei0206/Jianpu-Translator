@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Jianpu Editor with MusicXML Import</title>
+  <style>
+    /* Load Jianpu font */
+    @font-face {
+      font-family: Jianpu;
+      src: url("static/JianpuASCII.ttf") format("truetype");
+    }
+
+    body {
+      font-family: Arial, sans-serif; 
+      margin: 0; 
+      padding: 20px; 
+      display: flex; 
+      gap: 20px; 
+      background: #f5f5f5;
+    }
+
+    #input{
+        display: none;
+    }
+
+    /* Jianpu preview block only */
+    .preview.jianpuBlock {
+        flex: 1;
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        font-size: 32px;
+        position: relative;
+        font-family: Jianpu, Arial, sans-serif;
+        line-height: 1.5;
+        overflow-x: auto;   /* prevent horizontal scroll */
+        display: flex;
+        flex-wrap: wrap;      /* ✅ allow child blocks (.line) to wrap */
+        align-content: flex-start;
+    }
+
+    .header { 
+      text-align: center; 
+      margin-bottom: 20px; 
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      font-size: 16px;
+      font-family: Arial, sans-serif; /* stays normal font */
+    }
+
+    .control-group { margin: 10px 0; }
+    .line { display: flex; flex-wrap: warp; margin-bottom: 50px;}
+    .cell { display: flex; justify-content: center; align-items: stretch; min-width: auto; position: relative;}
+
+    .note {
+      display: inline-block;
+      position: relative;
+      margin: 0px;
+      text-align: center;
+      min-width: 20px;
+      /* inherits Jianpu font from parent .jianpuBlock */
+    }
+
+    .bar { display: inline-block; background: black; align-self: stretch; }
+    .bar.single { width: 2px; margin: 0 10px; }
+    .bar.double {
+      width: 6px;
+      background: repeating-linear-gradient(to right, black, black 2px, transparent 2px, transparent 4px);
+      margin: 0 10px;
+    }
+    .bar.final {
+      display: flex; flex-direction: row; margin: 0 10px;
+    }
+    .bar.final .thin { width: 2px; background: black; }
+    .bar.final .thick { width: 6px; background: black; }
+
+    .bar-group {
+        display: flex;
+        margin: 0 10px; /* spacing between bar lines */
+    }
+
+    .staff {
+      display: flex;
+      flex-direction: column; /* Title on top */
+      gap: 10px;
+      position: relative;
+    }
+
+    .staff .title {
+      width: 100%;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .staff .title .title-input {
+      font-size: 24px;
+      border: none;
+      border-bottom: 2px solid #ccc;
+      text-align: center;
+      outline: none;
+      width: 80%;
+      font-family: Arial, sans-serif;
+    }
+
+    .staff-body {
+      display: flex;
+      flex-direction: row;  /* Meta left, Score right */
+      align-items: flex-start;
+      gap: 20px;
+      width: max-content;
+    }
+
+    #meta{
+      flex: 0 0 auto;   /* do not stretch */
+      font-size: 28px;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    #meta .clef {
+      font-weight: bold;
+      font-size: 50px;
+    }
+
+    #meta .timesig {
+      font-style: italic;
+      font-size: 28px;
+    }
+
+    #score {
+      flex: 1;          /* take remaining space */
+      display: flex;
+      flex-wrap: wrap;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    /* ===== GLOBAL SMOOTHNESS ===== */
+* {
+  transition: all 0.25s ease;
+}
+
+body {
+  animation: fadeIn 0.6s ease-in-out;
+}
+
+/* ===== FADE IN ===== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== PANEL (CARD) EFFECT ===== */
+.preview.jianpuBlock {
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  backdrop-filter: blur(10px);
+}
+
+.preview.jianpuBlock:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+}
+
+/* ===== BUTTONS ===== */
+button {
+  background: linear-gradient(135deg, #4CAF50, #2e7d32);
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+button:active {
+  transform: scale(0.95);
+}
+
+/* ===== INPUTS ===== */
+input, select {
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  padding: 5px;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 8px rgba(76,175,80,0.5);
+}
+
+/* ===== TITLE INPUT ===== */
+.title-input:focus {
+  border-bottom: 2px solid #4CAF50;
+  transform: scale(1.05);
+}
+
+/* ===== NOTES ===== */
+.note {
+  transition: transform 0.15s ease, color 0.2s ease;
+}
+
+.note:hover {
+  transform: translateY(-5px) scale(1.2);
+  color: #2e7d32;
+}
+
+/* Editable focus */
+.note:focus {
+  outline: none;
+  background: rgba(76,175,80,0.1);
+  border-radius: 4px;
+}
+
+/* ===== NOTE PULSE (PLAY FEEL) ===== */
+@keyframes pulse {
+  0% { transform: scale(1); color: black; }
+  50% { transform: scale(1.3); color: #4CAF50; }
+  100% { transform: scale(1); color: black; }
+}
+
+.note.playing {
+  animation: pulse 0.4s ease;
+}
+
+/* ===== BARLINES ===== */
+.bar {
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.bar:hover {
+  transform: scaleY(1.2);
+  background: #4CAF50;
+}
+
+/* ===== CONTROL GROUP SPACING ===== */
+.control-group {
+  padding: 5px;
+  border-radius: 6px;
+}
+
+.control-group:hover {
+  background: rgba(0,0,0,0.05);
+}
+
+/* ===== SLIDER ===== */
+input[type="range"] {
+  accent-color: #4CAF50;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar {
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #bbb;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #888;
+}
+    
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+</head>
+<body>
+  <textarea id="input" placeholder="Type Jianpu notation here..."></textarea>
+  
+  <div class="preview jianpuBlock">
+    <div class="controls">
+      <div class="control-group">
+        <label for="key">Key signature:</label>
+        <select id="key">
+          <option value="C">C Major / A minor</option>
+          <option value="G">G Major / E minor</option>
+          <option value="D">D Major / B minor</option>
+          <option value="A">A Major / F♯ minor</option>
+          <option value="E">E Major / C♯ minor</option>
+          <option value="F">F Major / D minor</option>
+          <option value="Bb">B♭ Major / G minor</option>
+          <option value="Eb">E♭ Major / C minor</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="tempo">Speed (BPM per note):</label>
+        <input type="range" id="tempo" min="15" max="500" value="100">
+        <span id="tempo-value">100</span>
+      </div>
+      <div class="control-group">
+        <label for="xmlFile">Import MusicXML:</label>
+        <input type="file" id="xmlFile" accept=".musicxml">
+      </div>
+      <div class="control-group">
+        <button id="playButton">▶ Play</button>
+        <button id="stopButton">⏹ Stop</button>
+      </div>
+      <div class="control-group">
+        <button id="exportPDF">⬇ Export PDF</button>
+      </div>  
+      <div class="control-group">
+        <button id="exportImage">🖼 Export Image</button>
+      </div>
+    </div>
+    <div class="staff">
+      <div class="title">
+        <input id="title" class="title-input" type="text" placeholder="Enter Title Here">
+      </div>
+      <div class="staff-body">
+        <div id="meta"></div>
+        <div id="score"></div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+/* ====== Jianpu Converter (JS port of converter.py) ====== */
+
+// Key mappings
+const MAJOR_KEY_MAPPINGS = {
+  "C":  {"C":"1","D":"2","E":"3","F":"4","G":"5","A":"6","B":"7"},
+  "G":  {"G":"1","A":"2","B":"3","C":"4","D":"5","E":"6","F#":"7"},
+  "D":  {"D":"1","E":"2","F#":"3","G":"4","A":"5","B":"6","C#":"7"},
+  "A":  {"A":"1","B":"2","C#":"3","D":"4","E":"5","F#":"6","G#":"7"},
+  "E":  {"E":"1","F#":"2","G#":"3","A":"4","B":"5","C#":"6","D#":"7"},
+  "B":  {"B":"1","C#":"2","D#":"3","E":"4","F#":"5","G#":"6","A#":"7"},
+  "F#": {"F#":"1","G#":"2","A#":"3","B":"4","C#":"5","D#":"6","E#":"7"},
+  "C#": {"C#":"1","D#":"2","E#":"3","F#":"4","G#":"5","A#":"6","B#":"7"},
+  "F":  {"F":"1","G":"2","A":"3","Bb":"4","C":"5","D":"6","E":"7"},
+  "Bb": {"Bb":"1","C":"2","D":"3","Eb":"4","F":"5","G":"6","A":"7"},
+  "Eb": {"Eb":"1","F":"2","G":"3","Ab":"4","Bb":"5","C":"6","D":"7"},
+  "Ab": {"Ab":"1","Bb":"2","C":"3","Db":"4","Eb":"5","F":"6","G":"7"},
+  "Db": {"Db":"1","Eb":"2","F":"3","Gb":"4","Ab":"5","Bb":"6","C":"7"},
+  "Gb": {"Gb":"1","Ab":"2","Bb":"3","Cb":"4","Db":"5","Eb":"6","F":"7"},
+  "Cb": {"Cb":"1","Db":"2","Eb":"3","Fb":"4","Gb":"5","Ab":"6","Bb":"7"},
+};
+
+const MINOR_KEY_MAPPINGS = {
+  "A":  {"A":"1","B":"2","C":"3","D":"4","E":"5","F":"6","G":"7"},
+  "E":  {"E":"1","F#":"2","G":"3","A":"4","B":"5","C":"6","D":"7"},
+  "B":  {"B":"1","C#":"2","D":"3","E":"4","F#":"5","G":"6","A":"7"},
+  "F#": {"F#":"1","G#":"2","A":"3","B":"4","C#":"5","D":"6","E":"7"},
+  "C#": {"C#":"1","D#":"2","E":"3","F#":"4","G#":"5","A":"6","B":"7"},
+  "G#": {"G#":"1","A#":"2","B":"3","C#":"4","D#":"5","E":"6","F#":"7"},
+  "D#": {"D#":"1","E#":"2","F#":"3","G#":"4","A#":"5","B":"6","C#":"7"},
+  "A#": {"A#":"1","B#":"2","C#":"3","D#":"4","E#":"5","F#":"6","G#":"7"},
+  "D":  {"D":"1","E":"2","F":"3","G":"4","A":"5","Bb":"6","C":"7"},
+  "G":  {"G":"1","A":"2","Bb":"3","C":"4","D":"5","Eb":"6","F":"7"},
+  "C":  {"C":"1","D":"2","Eb":"3","F":"4","G":"5","Ab":"6","Bb":"7"},
+  "F":  {"F":"1","G":"2","Ab":"3","Bb":"4","C":"5","Db":"6","Eb":"7"},
+  "Bb": {"Bb":"1","C":"2","Db":"3","Eb":"4","F":"5","Gb":"6","Ab":"7"},
+  "Eb": {"Eb":"1","F":"2","Gb":"3","Ab":"4","Bb":"5","Cb":"6","Db":"7"},
+  "Ab": {"Ab":"1","Bb":"2","Cb":"3","Db":"4","Eb":"5","Fb":"6","Gb":"7"},
+};
+
+// Base frequencies for scale (C major)
+const BASE_FREQUENCIES = {
+  "1": 261.63, // C4
+  "2": 293.66, // D4
+  "3": 329.63, // E4
+  "4": 349.23, // F4
+  "5": 392.00, // G4
+  "6": 440.00, // A4
+  "7": 493.88  // B4
+};
+
+
+// Jianpu duration map (relative to quarter = 1.0 beat)
+const DURATION_MAP = {
+  "///": 0.125, "///.": 0.1875,
+  "//": 0.25,   "//.": 0.375,
+  "/": 0.5,     "/.": 0.75,
+  "": 1.0,      ".": 1.5,
+  "-": 2.0,     "--": 3.0,    
+  "---": 4.0
+};
+
+// return a mapping from Jianpu 1–7 → frequency
+function getKeyFrequencies(keyName, mode="major") {
+  // choose mapping (major/minor)
+  const mapping = get_key_mapping(keyName, mode);
+
+  // middle octave scale (C4 ≈ 261.63 Hz)
+  const refFreqs = { "C":261.63, "C#":277.18, "Db":277.18,
+                     "D":293.66, "D#":311.13, "Eb":311.13,
+                     "E":329.63, "F":349.23, "F#":369.99, "Gb":369.99,
+                     "G":392.00, "G#":415.30, "Ab":415.30,
+                     "A":440.00, "A#":466.16, "Bb":466.16,
+                     "B":493.88 };
+
+  let freqMap = {};
+  for (let pitch in mapping) {
+    //example: num=1, pitch=c
+    let num = mapping[pitch]; // Jianpu 1–7
+    //Checks that the pitch exists in mapping table, then adds to freqMap with corresponding frequency
+    if (refFreqs[pitch]) {
+      freqMap[num] = refFreqs[pitch];
+    }
+  }
+  return freqMap;
+}
+
+
+// Parse Jianpu token → { freq, durationInBeats }
+function parseJianpuToken(token, freqMap) {
+  //If the token is empty or undefined, treat it as a rest with 1 beat.
+  if (!token) return { freq: null, beats: 1.0 };
+  if (token.startsWith("0")) {
+    //slice(1) removes the first character ("0") and keeps the rest.
+    let durSuffix = token.slice(1);
+    let beats = DURATION_MAP[durSuffix] || 1.0;
+    return { freq: null, beats };
+  }
+
+  let octaveShift = 0;
+  let accidental = 0;
+  let durSuffix = "";
+
+  // duration suffix
+  // \/+ → one or more / characters
+  // \.? → optionally one . character after the slashes
+  // \-+ → one or more - characters
+  // \.{1} → exactly one dot
+  let match = token.match(/(\/+\.?|\-+|\.{1})$/);
+  if (match) {
+    durSuffix = match[0];
+    // Remove duration suffix from token for next steps
+    token = token.slice(0, -durSuffix.length);
+  }
+  let beats = DURATION_MAP[durSuffix] || 1.0;
+
+  // octave markers
+  octaveShift += (token.match(/'/g) || []).length;
+  octaveShift -= (token.match(/,/g) || []).length;
+  // remove octave markers for next steps
+  token = token.replace(/['\,]/g, "");
+
+  // accidentals
+  if (token.includes("#")) accidental += 1;
+  if (token.includes("b")) accidental -= 1;
+  // remove accidental symbols for next steps
+  token = token.replace(/[#b]/g, "");
+
+  // base number
+  // match first digit 1–7 in the token, if not found, no frequency with a rest
+  const base = token.match(/[1-7]/)?.[0];
+  if (!base) return { freq: null, beats };
+
+  // look up frequency from freg
+  let freq = freqMap[base];
+  if (!freq) return { freq: null, beats };
+
+  // apply accidental (semitones)
+  // frequency for # or b = base frequency * 2^(accidental/12)
+  freq *= Math.pow(2, accidental / 12);
+
+  // apply octave shift
+  // frequency for . or , = base frequency * 2^(octaveShift)
+  freq *= Math.pow(2, octaveShift);
+
+  return { freq, beats };
+}
+
+
+let audioCtx = null;
+let scheduledNotes = [];
+
+function parseFromDOM() {
+  const score = document.getElementById("score");
+  if (!score) return [];
+
+  const extractTokenFromCell = (cell) => {
+    const notesInCell = Array.from(cell.querySelectorAll(".note"))
+      .map((el) => el.textContent.trim())
+      .filter(Boolean);
+
+    if (notesInCell.length === 0) return null;
+    return notesInCell.length > 1 ? notesInCell : notesInCell[0];
+  };
+
+  const parseBarGroup = (barGroup) => {
+    const measure = [];
+    barGroup.querySelectorAll(":scope > .cell").forEach((cell) => {
+      const token = extractTokenFromCell(cell);
+      if (token) measure.push(token);
+    });
+    return measure;
+  };
+
+  // Single-part render path
+  const lineDivs = score.querySelectorAll(".line");
+  if (lineDivs.length > 0) {
+    const measures = [];
+    lineDivs.forEach((line) => {
+      line.querySelectorAll(":scope > .bar-group").forEach((group) => {
+        const measure = parseBarGroup(group);
+        if (measure.length > 0) measures.push(measure);
+      });
+    });
+    return measures;
+  }
+
+  // Multi-part render path (rows/parts)
+  const partsById = new Map();
+  score.querySelectorAll("[data-part]").forEach((partContainer) => {
+    const partId = partContainer.getAttribute("data-part") || "part";
+    const partLine = partContainer.querySelector(":scope > div:last-child");
+    if (!partLine) return;
+
+    if (!partsById.has(partId)) partsById.set(partId, []);
+    const partMeasures = partsById.get(partId);
+
+    partLine.querySelectorAll(":scope > .bar-group").forEach((group) => {
+      const measure = parseBarGroup(group);
+      if (measure.length > 0) partMeasures.push(measure);
+    });
+  });
+
+  if (partsById.size === 0) return [];
+  return { type: "multi-part", parts: Array.from(partsById.values()) };
+}
+
+function scheduleTokens(tokens, startTime, quarterDuration, freqMap) {
+  let time = startTime;
+
+  tokens.forEach((tok) => {
+    if (tok === "|") return;
+
+    if (Array.isArray(tok)) {
+      let chordDurBeats = 0;
+      let freqs = [];
+
+      tok.forEach((noteStr) => {
+        const { freq, beats } = parseJianpuToken(noteStr, freqMap);
+        if (freq) freqs.push(freq);
+        chordDurBeats = Math.max(chordDurBeats, beats);
+      });
+
+      if (freqs.length > 0) {
+        playChord(freqs, chordDurBeats * quarterDuration, time);
+      }
+      time += chordDurBeats * quarterDuration;
+      return;
+    }
+
+    const { freq, beats } = parseJianpuToken(tok, freqMap);
+    if (freq) playNoteAtTime(freq, time, beats * quarterDuration);
+    time += beats * quarterDuration;
+  });
+
+  return time - startTime;
+}
+
+function playJianpuMultiPart(parts, tempo = 100) {
+  if (!parts || parts.length === 0) return;
+
+  if (!audioCtx || audioCtx.state === "closed") {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+
+  const keyName = document.getElementById("key").value;
+  const freqMap = getKeyFrequencies(keyName, "major");
+  const quarterDuration = 60 / tempo;
+
+  let currentTime = audioCtx.currentTime;
+  const maxMeasures = Math.max(...parts.map((p) => p.length));
+
+  for (let m = 0; m < maxMeasures; m++) {
+    let measureDuration = 0;
+
+    parts.forEach((partMeasures) => {
+      const tokens = partMeasures[m] || [];
+      const elapsed = scheduleTokens(tokens, currentTime, quarterDuration, freqMap);
+      measureDuration = Math.max(measureDuration, elapsed);
+    });
+
+    currentTime += measureDuration;
+  }
+}
+
+
+// Play one note
+function playNoteAtTime(freq, startTime, durationSec) {
+  if (!freq) return; // rest
+  //generate sound wave for given frequency and duration using Web Audio API
+  const osc = audioCtx.createOscillator();
+  // controls volume
+  const gain = audioCtx.createGain();
+
+  // set oscillator type
+  osc.type = "sine";
+  //set the pitch in Hz
+  osc.frequency.value = freq;
+
+  // Web Audio API works by connecting Oscillator → Gain → Audio Destination (speakers)
+  // connect oscillator to gain
+  osc.connect(gain);
+  // connect gain to audio output
+  gain.connect(audioCtx.destination);
+
+  // At startTime, gain = 0.2 (moderate volume)
+  gain.gain.setValueAtTime(0.2, startTime);
+  // Over durationSec, volume decreases exponentially to 0.001 for natural fade-out effect
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + durationSec);
+
+  osc.start(startTime);
+  osc.stop(startTime + durationSec);
+
+  // Keep track of scheduled notes so we can stop them if needed
+  scheduledNotes.push(osc);
+}
+
+function playChord(frequencies, duration, startTime) {
+  frequencies.forEach(freq => {
+    let osc = audioCtx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+
+    let gainNode = audioCtx.createGain();
+    gainNode.gain.setValueAtTime(0.2, startTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+
+    scheduledNotes.push(osc);
+  });
+}
+
+
+
+
+// Main playback
+function playJianpu(measures, tempo = 100) {
+  // If there are no notes, the function stops immediately.
+  if (!measures || measures.length === 0) return;
+
+  //If audioCtx doesn't exist or is closed → create a new one.
+  if (!audioCtx || audioCtx.state === "closed") {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  //Resume audio if paused
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+
+  //read selected key signature from UI
+  const keyName = document.getElementById("key").value;
+  //Convert scale numbers to frequencies
+  //eg: 1 -> C -> 261.63 Hz
+  const freqMap = getKeyFrequencies(keyName, "major");
+
+  //Calculate beat duration
+  const quarterDuration = 60 / tempo;
+  //set start time
+  let currentTime = audioCtx.currentTime;
+
+  //loop each measure
+  measures.forEach(tokens => {
+    //loop each note inside measure
+    tokens.forEach(tok => {
+      //skip | symbol
+      if (tok === "|") return;
+      //If the token is an array, it means multiple notes play together.
+      if (Array.isArray(tok)) {
+        //duration of the chord
+        let chordDur = 0;
+        //frequencies of the notes
+        let freqs = [];
+        //loop each note in chord
+        tok.forEach(noteStr => {
+          //gets the frequency and duration of that note.
+          const { freq, beats } = parseJianpuToken(noteStr, freqMap);
+          //If there’s a frequency (not a rest), add it to freqs
+          if (freq) freqs.push(freq);
+          //Update chordDur to be the longest note’s duration in the chord.
+          chordDur = Math.max(chordDur, beats);
+        });
+        //if the chord has any actual notes, play it.
+        if (freqs.length > 0) {
+          //Duration in seconds = chordDur * quarterDuration
+          playChord(freqs, chordDur * quarterDuration, currentTime);
+        }
+        //Move currentTime forward by the chord’s duration.
+        currentTime += chordDur * quarterDuration;
+      } else { //If tok is a single note:
+        //Get its frequency and duration.
+        const { freq, beats } = parseJianpuToken(tok, freqMap);
+        if (freq) {
+          //If it’s not a rest, play it using playNoteAtTime().
+          playNoteAtTime(freq, currentTime, beats * quarterDuration);
+        }
+        //Move currentTime forward by the note’s duration.
+        currentTime += beats * quarterDuration;
+      }
+    });
+  });
+}
+
+
+
+
+// Stop playback
+function stopPlayback() {
+  if (scheduledNotes.length > 0) {
+    scheduledNotes.forEach(osc => {
+      try { osc.stop(); } catch(e) {}
+    });
+    scheduledNotes = [];
+  }
+  if (audioCtx) {
+    audioCtx.close();
+    audioCtx = null;
+  }
+}
+
+
+// Accidentals
+const ASCII_ACC = { sharp: "#", flat: "b", natural: "n" };
+const UNICODE_ACC = { sharp: "♯", flat: "♭", natural: "♮" };
+
+// === helpers ===
+function _octave_mark(octave) {
+  if (!octave && octave !== 0) return "";
+  return octave >= 4 ? "'".repeat(octave - 4) : ",".repeat(4 - octave);
+}
+
+function setKeyFromMusicXML(xml) {
+  const keyEl = xml.querySelector("key");
+  if (!keyEl) return { keyName: "C", mode: "major" };
+
+  const fifths = parseInt(keyEl.querySelector("fifths")?.textContent || "0", 10);
+  const mode = (keyEl.querySelector("mode")?.textContent || "major").toLowerCase();
+
+  // Map circle of fifths → key name
+  const keyMap = {
+    "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F",
+     "0": "C",
+     "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#"
+  };
+
+  const keyName = keyMap[fifths] || "C";
+
+  // update UI dropdown
+  const keySelect = document.getElementById("key");
+  if (keySelect) {
+    [...keySelect.options].forEach(opt => {
+      if (opt.value === keyName) {
+        keySelect.value = keyName;
+      }
+    });
+  }
+
+  return { keyName, mode };
+}
+
+function getWorkTitle(xml) {
+  let titleEl = xml.getElementsByTagName("work-title")[0];
+  if (titleEl) {
+    return titleEl.textContent.trim();
+  }
+  return "";
+}
+
+
+
+function _duration_suffix(ql) {
+  const candidates = [
+    [0.125, "///"],   // 32nd
+    [0.1875, "///."], // dotted 32nd
+    [0.25, "//"],     // 16th
+    [0.375, "//."],   // dotted 16th
+    [0.5, "/"],       // 8th
+    [0.75, "/."],     // dotted 8th
+    [1.0, ""],        // quarter
+    [1.5, "."],       // dotted quarter
+    [2.0, "-"],       // half
+    [3.0, "--"],      // dotted half
+    [4.0, "---"],     // whole
+  ];
+  let best = candidates[0];
+  let minDiff = Math.abs(ql - candidates[0][0]);
+  for (let [val, suf] of candidates) {
+    let diff = Math.abs(ql - val);
+    if (diff < minDiff) {
+      minDiff = diff;
+      best = [val, suf];
+    }
+  }
+  return best[1];
+}
+
+function _pitch_name(step, alter) {
+  if (alter === 0) return step;
+  if (alter > 0) return step + "#".repeat(alter);
+  return step + "b".repeat(-alter);
+}
+
+function _find_base_from_mapping(mapping, step) {
+  for (let k in mapping) {
+    if (k[0] === step) return mapping[k];
+  }
+  return null;
+}
+
+function get_key_mapping(keyName, mode) {
+  //if mode is minor, look up minor mapping; if not found, fall back to c major
+  if ((mode || "").toLowerCase() === "minor") {
+    return MINOR_KEY_MAPPINGS[keyName] || MAJOR_KEY_MAPPINGS["C"];
+  }
+  return MAJOR_KEY_MAPPINGS[keyName] || MAJOR_KEY_MAPPINGS["C"];
+}
+
+
+// === core converter ===
+function _convert_note(note, mapping, useUnicodeAccidentals = true) {
+  if (note.is_rest) {
+    return "0" + _duration_suffix(parseFloat(note.ql || 1.0));
+  }
+
+  let step = note.step;
+  let octave = note.octave;
+  let alter = parseInt(note.alter || 0);
+  let ql = parseFloat(note.ql || 1.0);
+  if (!step) return "?";
+
+  let pname = _pitch_name(step, alter);
+  let num = mapping[pname];
+
+  let accSymbols = useUnicodeAccidentals ? UNICODE_ACC : ASCII_ACC;
+
+  if (!num) {
+    num = mapping[step];
+    if (num) {
+      if (alter === 1) num = accSymbols.sharp + num;
+      else if (alter === -1) num = accSymbols.flat + num;
+      else num = accSymbols.natural + num;
+    } else {
+      let base = _find_base_from_mapping(mapping, step);
+      if (base) {
+        if (alter === 1) num = accSymbols.sharp + base;
+        else if (alter === -1) num = accSymbols.flat + base;
+        else num = accSymbols.natural + base;
+      } else {
+        num = "?";
+      }
+    }
+  } else {
+    if (alter === 0 && !(pname in mapping)) {
+      let base = mapping[step] || _find_base_from_mapping(mapping, step);
+      if (base) num = accSymbols.natural + base;
+    }
+  }
+
+  return num + _octave_mark(octave) + _duration_suffix(ql);
+}
+
+// === MusicXML parsing ===
+function xmlNoteToObj(noteEl) {
+  let obj = {};
+  obj.is_rest = noteEl.getElementsByTagName("rest").length > 0;
+  obj.step = noteEl.getElementsByTagName("step")[0]?.textContent || null;
+  obj.octave = parseInt(noteEl.getElementsByTagName("octave")[0]?.textContent || "4");
+  obj.alter = parseInt(noteEl.getElementsByTagName("alter")[0]?.textContent || "0");
+  obj.isChord = noteEl.getElementsByTagName("chord").length > 0; 
+
+  let type = noteEl.getElementsByTagName("type")[0]?.textContent;
+  let durationVal = 1.0;
+  if (type === "whole") durationVal = 4.0;
+  else if (type === "half") durationVal = 2.0;
+  else if (type === "quarter") durationVal = 1.0;
+  else if (type === "eighth") durationVal = 0.5;
+  else if (type === "16th") durationVal = 0.25;
+  else if (type === "32nd") durationVal = 0.125;
+  obj.ql = durationVal;
+
+  if (noteEl.getElementsByTagName("dot").length) {
+    obj.ql *= 1.5; // dotted note
+  }
+
+  obj.measure = parseInt(noteEl.closest("measure")?.getAttribute("number") || "0");
+  return obj;
+}
+
+function musicxmlToJianpu(xmlText, useUnicodeAccidentals = true) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(xmlText, "application/xml");
+
+  let workTitle = getWorkTitle(xml);
+  if (workTitle) {
+    document.getElementById("title").value = workTitle;
+  }
+
+  const { keyName, mode } = setKeyFromMusicXML(xml);
+  const mapping = get_key_mapping(keyName, mode);
+
+  let tempo = getTempo(xml);
+  let timeSig = getTimeSignature(xml);
+
+  const clefSymbols = {
+    G: "&#119070;", // Treble
+    F: "&#119074;", // Bass
+    C: "&#119073;", // Alto/Tenor
+  };
+
+  document.getElementById("tempo").value = tempo;
+  document.getElementById("tempo-value").textContent = tempo;
+
+  const score = document.getElementById("score");
+  score.innerHTML = "";
+
+  // Check for multiple parts
+  const parts = xml.getElementsByTagName("part");
+  
+  // If no parts found, fallback to original behavior
+  if (parts.length === 0) {
+    const measures = xml.getElementsByTagName("measure");
+    let measuresOut = [];
+    let clef = getClef(xml);
+
+    document.getElementById("meta").innerHTML = `
+      <span class="timesig">${timeSig}</span>
+    `;
+
+    for (let m of measures) {
+      let barTokens = [];
+      const notes = m.getElementsByTagName("note");
+
+      let chordBuffer = [];
+
+      for (let n of notes) {
+        const obj = xmlNoteToObj(n);
+        const tok = _convert_note(obj, mapping, useUnicodeAccidentals);
+
+        if (obj.isChord) {
+          chordBuffer.push(tok);
+        } else {
+          if (chordBuffer.length > 0) {
+            barTokens.push(chordBuffer);
+            chordBuffer = [];
+          }
+          chordBuffer = [tok];
+        }
+
+        if (n === notes[notes.length - 1] && chordBuffer.length > 0) {
+          barTokens.push(chordBuffer);
+          chordBuffer = [];
+        }
+      }
+      measuresOut.push(barTokens);
+    }
+
+    return measuresOut;
+  }
+
+  // Process multiple parts - each part on separate line with its own clef
+  let measuresOut = [];
+
+  // Set initial clef from first part for meta display
+  const firstPart = parts[0];
+  const initialClef = getClefForPart(firstPart);
+  document.getElementById("meta").innerHTML = `
+    <span class="timesig">${timeSig}</span>
+  `;
+
+  // Process each part sequentially
+  for (let part of parts) {
+    const partId = part.getAttribute("id");
+    const partClef = getClefForPart(part);
+    const measures = part.getElementsByTagName("measure");
+
+    for (let m of measures) {
+      const measureNum = m.getAttribute("number");
+
+      let barTokens = [];
+      const notes = m.getElementsByTagName("note");
+
+      let chordBuffer = [];
+
+      for (let n of notes) {
+        const obj = xmlNoteToObj(n);
+        const tok = _convert_note(obj, mapping, useUnicodeAccidentals);
+
+        if (obj.isChord) {
+          chordBuffer.push(tok);
+        } else {
+          if (chordBuffer.length > 0) {
+            barTokens.push(chordBuffer);
+            chordBuffer = [];
+          }
+          chordBuffer = [tok];
+        }
+
+        if (n === notes[notes.length - 1] && chordBuffer.length > 0) {
+          barTokens.push(chordBuffer);
+          chordBuffer = [];
+        }
+      }
+
+      // Store measure with part info and clef
+      measuresOut.push({
+        partId: partId,
+        measureNum: measureNum,
+        clef: partClef,
+        tokens: barTokens
+      });
+    }
+  }
+
+  return measuresOut;
+}
+
+
+
+
+
+
+
+
+/* ====== existing editor UI logic ====== */
+const input = document.getElementById("input");
+const score = document.getElementById("score");
+const tempo = document.getElementById("tempo");
+const tempoValue = document.getElementById("tempo-value");
+const xmlFile = document.getElementById("xmlFile");
+const playButton = document.getElementById("playButton");
+const stopButton = document.getElementById("stopButton");
+
+// PDF Export
+document.getElementById("exportPDF").addEventListener("click", async () => {
+  const staff = document.querySelector(".staff");
+  // Render staff to canvas
+  const canvas = await html2canvas(staff, {
+    scale: 2,            // high resolution
+    backgroundColor: "#fff"
+  });
+
+
+  const imgData = canvas.toDataURL("image/png");
+
+  // Create PDF
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF("p", "mm", "a4");
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  const imgProps = pdf.getImageProperties(imgData);
+  const pdfWidth = pageWidth - 20; // margin
+  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+  let y = 10;
+  if (pdfHeight < pageHeight) {
+    pdf.addImage(imgData, "PNG", 10, y, pdfWidth, pdfHeight);
+  } else {
+    // Handle multi-page
+    let heightLeft = pdfHeight;
+    let position = 0;
+
+    while (heightLeft > 0) {
+      pdf.addImage(imgData, "PNG", 10, position + 10, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+      position -= pageHeight;
+      if (heightLeft > 0) pdf.addPage();
+    }
+  }
+  pdf.save((document.getElementById("title").value || "score") + ".pdf");
+});
+
+// Export staff as PNG image
+document.getElementById("exportImage").addEventListener("click", async () => {
+  const staff = document.querySelector(".staff");
+
+  const canvas = await html2canvas(staff, {
+    scale: 2,            // high resolution
+    backgroundColor: "#fff"
+  });
+
+  const imgData = canvas.toDataURL("image/png");
+
+  // Create a download link
+  const link = document.createElement("a");
+  link.href = imgData;
+  link.download = (document.getElementById("title").value || "score") + ".png";
+  link.click();
+});
+
+
+playButton.addEventListener("click", () => {
+  const parsed = parseFromDOM();
+  console.log("Parsed measures:", parsed);
+
+  const tempoValueNum = parseInt(tempo.value, 10);
+
+  if (parsed && !Array.isArray(parsed) && parsed.type === "multi-part") {
+    playJianpuMultiPart(parsed.parts, tempoValueNum);
+    return;
+  }
+
+  playJianpu(parsed, tempoValueNum);
+});
+
+stopButton.addEventListener("click", stopPlayback);
+
+
+function parseLines(text) {
+  return text.split(/\n/).map(line => line.split(/\s+/).filter(Boolean));
+}
+
+function getTempo(xml) {
+  let sound = xml.getElementsByTagName("sound")[0];
+  if (sound && sound.getAttribute("tempo")) {
+    return parseInt(sound.getAttribute("tempo"));
+  }
+
+  let perMinute = xml.getElementsByTagName("per-minute")[0];
+  if (perMinute) {
+    return parseInt(perMinute.textContent);
+  }
+
+  return 100; // default fallback
+}
+
+function getClef(xml) {
+  let clef = xml.getElementsByTagName("clef")[0];
+  if (!clef) return "G"; // default treble
+
+  let sign = clef.getElementsByTagName("sign")[0]?.textContent || "G";
+  return sign
+}
+
+// Get clef for a specific part
+function getClefForPart(partElement) {
+  let clef = partElement.querySelector("clef");
+  if (!clef) return "G"; // default treble
+  
+  let sign = clef.querySelector("sign")?.textContent || "G";
+  return sign;
+}
+
+function getTimeSignature(xml) {
+  let time = xml.getElementsByTagName("time")[0];
+  if (!time) return "4/4"; // default
+
+  let beats = time.getElementsByTagName("beats")[0]?.textContent || "4";
+  let beatType = time.getElementsByTagName("beat-type")[0]?.textContent || "4";
+  return beats + "/" + beatType;
+}
+
+// ✅ Allowed characters: 1-7, , ' . / # b n 
+const VALID_PATTERN = /[^1234567,'.\/#bn]/g;
+
+function renderJianpu(measures) {
+  const clefSymbols = {
+    G: "&#119070;", // Treble
+    F: "&#119074;", // Bass
+    C: "&#119073;", // Alto/Tenor
+  };
+
+  // keep meta safe
+  const meta = score.querySelector(".meta");
+  const preservedMeta = meta ? meta.cloneNode(true) : null;
+  // reset score
+  score.innerHTML = "";
+  if (preservedMeta) score.appendChild(preservedMeta);
+
+  // Check if measures have part info (multi-part format)
+  const hasPartInfo = measures.length > 0 && measures[0] && typeof measures[0] === 'object' && measures[0].partId;
+
+  if (!hasPartInfo) {
+    // Original behavior for single-part or fallback format
+    let lineDiv = document.createElement("div");
+    lineDiv.className = "line";
+    let barCount = 0;
+
+    // ✅ add starting final barline at very beginning
+    let startBarCell = document.createElement("div");
+    startBarCell.className = "cell";
+    let startBar = document.createElement("div");
+    startBar.className = "bar final";
+    startBar.innerHTML = `<div class="thin"></div><div class="thick"></div>`;
+    startBarCell.appendChild(startBar);
+    lineDiv.appendChild(startBarCell);
+
+    measures.forEach((tokens, idx) => {
+      // === notes in measure ===
+      let barGroup = document.createElement("div");
+      barGroup.className = "bar-group";
+
+      tokens.forEach(tok => {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+
+        if (Array.isArray(tok)) {
+          // chord → stack vertically
+          let chordDiv = document.createElement("div");
+          chordDiv.style.display = "flex";
+          chordDiv.style.flexDirection = "column";
+          chordDiv.style.alignItems = "center";
+
+          tok.forEach(noteStr => {
+            let note = document.createElement("div");
+            note.className = "note";
+            note.textContent = noteStr;
+            note.contentEditable = "true";
+            chordDiv.appendChild(note);
+
+            // ✅ restrict characters
+            note.addEventListener("input", () => {
+              note.textContent = note.textContent.replace(VALID_PATTERN, "");
+            });
+          });
+
+          cell.appendChild(chordDiv);
+        } else {
+          // single note
+          let note = document.createElement("div");
+          note.className = "note";
+          note.textContent = tok;
+          note.contentEditable = "true";
+
+          // ✅ restrict characters
+          note.addEventListener("input", () => {
+            note.textContent = note.textContent.replace(VALID_PATTERN, "");
+          });
+
+          cell.appendChild(note);
+        }
+
+        barGroup.appendChild(cell);
+      });
+
+      lineDiv.appendChild(barGroup);
+
+
+      // === add single barline after each measure except last ===
+      if (idx < measures.length - 1) {
+        let barCell = document.createElement("div");
+        barCell.className = "cell";
+        let bar = document.createElement("div");
+        bar.className = "bar single";
+        barCell.appendChild(bar);
+        lineDiv.appendChild(barCell);
+
+        barCount++;
+        if (barCount >= 7) {
+          score.appendChild(lineDiv);
+          lineDiv = document.createElement("div");
+          lineDiv.className = "line";
+          barCount = 0;
+          // ✅ add starting barline at new line
+          let startBarCell = document.createElement("div");
+          startBarCell.className = "cell";
+          let startBar = document.createElement("div");
+          startBar.className = "bar single";
+          startBarCell.appendChild(startBar);
+          lineDiv.appendChild(startBarCell);
+        }
+      }
+      else{
+          // ✅ last measure of the last line → final barline
+        let endBarCell = document.createElement("div");
+        endBarCell.className = "cell";
+        let endBar = document.createElement("div");
+        endBar.className = "bar final";
+        endBar.innerHTML = `<div class="thin"></div><div class="thick"></div>`;
+        endBarCell.appendChild(endBar);
+        lineDiv.appendChild(endBarCell);
+      }
+      
+      }
+    )
+   if (lineDiv.children.length > 0) {
+      score.appendChild(lineDiv);
+
+    }
+  } else {
+    // Multi-part format: synchronize by measure number (horizontal staff layout)
+    let measuresByNumber = {};
+    let partIds = [];
+    
+    measures.forEach(m => {
+      const measureNum = m.measureNum;
+      if (!measuresByNumber[measureNum]) {
+        measuresByNumber[measureNum] = {};
+      }
+      if (!measuresByNumber[measureNum][m.partId]) {
+        measuresByNumber[measureNum][m.partId] = m;
+      }
+      if (!partIds.includes(m.partId)) {
+        partIds.push(m.partId);
+      }
+    });
+
+    const sortedMeasureNumbers = Object.keys(measuresByNumber).map(n => parseInt(n)).sort((a, b) => a - b);
+    let currentRow = null;
+    let measuresInRow = 0;
+    const measuresPerRow = 5;
+
+    sortedMeasureNumbers.forEach((measureNum, idx) => {
+      if (measuresInRow === 0) {
+        if (currentRow) score.appendChild(currentRow);
+        currentRow = document.createElement("div");
+        currentRow.style.display = "flex";
+        currentRow.style.flexDirection = "column";
+        currentRow.style.gap = "5px";
+        currentRow.style.marginBottom = "30px";
+      }
+
+      partIds.forEach((partId) => {
+        const measureData = measuresByNumber[measureNum][partId];
+        if (!measureData) return;
+
+        const { clef, tokens } = measureData;
+        let partContainer = currentRow.querySelector(`[data-part="${partId}"]`);
+        
+        if (!partContainer) {
+          partContainer = document.createElement("div");
+          partContainer.setAttribute("data-part", partId);
+          partContainer.style.display = "flex";
+          partContainer.style.alignItems = "center";
+          partContainer.style.gap = "5px";
+
+          if (measuresInRow === 0) {
+            const clefLabel = document.createElement("div");
+            clefLabel.style.fontSize = "50px";
+            clefLabel.style.fontWeight = "bold";
+            clefLabel.style.minWidth = "50px";
+            clefLabel.innerHTML = clefSymbols[clef] || clef;
+            partContainer.appendChild(clefLabel);
+          }
+
+          const partLine = document.createElement("div");
+          partLine.style.display = "flex";
+          partLine.style.alignItems = "center";
+          partLine.style.gap = "5px";
+          partContainer.appendChild(partLine);
+          currentRow.appendChild(partContainer);
+        }
+
+        const partLine = partContainer.querySelector("div:last-child");
+
+        if (measuresInRow === 0) {
+          let startBarCell = document.createElement("div");
+          startBarCell.className = "cell";
+          let startBar = document.createElement("div");
+          startBar.className = "bar final";
+          startBar.style.height = "40px";
+          startBar.innerHTML = `<div class="thin"></div><div class="thick"></div>`;
+          startBarCell.appendChild(startBar);
+          partLine.appendChild(startBarCell);
+        }
+
+        let barGroup = document.createElement("div");
+        barGroup.className = "bar-group";
+        barGroup.style.display = "flex";
+        barGroup.style.alignItems = "center";
+
+        tokens.forEach(tok => {
+          const cell = document.createElement("div");
+          cell.className = "cell";
+
+          if (Array.isArray(tok)) {
+            let chordDiv = document.createElement("div");
+            chordDiv.style.display = "flex";
+            chordDiv.style.flexDirection = "column";
+            chordDiv.style.alignItems = "center";
+
+            tok.forEach(noteStr => {
+              let note = document.createElement("div");
+              note.className = "note";
+              note.textContent = noteStr;
+              note.contentEditable = "true";
+              chordDiv.appendChild(note);
+
+              note.addEventListener("input", () => {
+                note.textContent = note.textContent.replace(VALID_PATTERN, "");
+              });
+            });
+
+            cell.appendChild(chordDiv);
+          } else {
+            let note = document.createElement("div");
+            note.className = "note";
+            note.textContent = tok;
+            note.contentEditable = "true";
+
+            note.addEventListener("input", () => {
+              note.textContent = note.textContent.replace(VALID_PATTERN, "");
+            });
+
+            cell.appendChild(note);
+          }
+
+          barGroup.appendChild(cell);
+        });
+
+        partLine.appendChild(barGroup);
+
+        let barCell = document.createElement("div");
+        barCell.className = "cell";
+        let bar = document.createElement("div");
+        bar.className = "bar single";
+        bar.style.height = "40px";
+        barCell.appendChild(bar);
+        partLine.appendChild(barCell);
+      });
+
+      measuresInRow++;
+
+      if (measuresInRow >= measuresPerRow || idx === sortedMeasureNumbers.length - 1) {
+        partIds.forEach(partId => {
+          const partContainer = currentRow.querySelector(`[data-part="${partId}"]`);
+          if (partContainer) {
+            const partLine = partContainer.querySelector("div:last-child");
+            if (partLine) {
+              const lastBar = partLine.lastChild;
+              if (lastBar && lastBar.querySelector(".bar.single")) {
+                partLine.removeChild(lastBar);
+              }
+              let endBarCell = document.createElement("div");
+              endBarCell.className = "cell";
+              let endBar = document.createElement("div");
+              endBar.className = "bar final";
+              endBar.style.height = "40px";
+              endBar.innerHTML = `<div class="thin"></div><div class="thick"></div>`;
+              endBarCell.appendChild(endBar);
+              partLine.appendChild(endBarCell);
+            }
+          }
+        });
+
+        score.appendChild(currentRow);
+        currentRow = null;
+        measuresInRow = 0;
+      }
+    });
+  }
+};
+
+function getQueryParam(name) {
+  const params = new URLSearchParams(window.location.search);
+  return params.get(name);
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  const fileParam = getQueryParam("file");
+  if (fileParam) {
+    fetch("uploads/" + fileParam)
+      .then(resp => resp.text())
+      .then(xmlText => {
+        const measures = musicxmlToJianpu(xmlText);
+        if (measures.length > 0 && measures[0].tokens) {
+          input.value = measures.map(m => m.tokens.join(" ")).join(" | ");
+        } else {
+          input.value = measures.map(m => m.join(" ")).join(" | ");
+        }
+        renderJianpu(measures);
+      })
+      .catch(err => console.error("Failed to load MusicXML:", err));
+  } else {
+    renderJianpu([]);
+  }
+});
+
+// Events
+tempo.addEventListener("input", () => tempoValue.textContent = tempo.value);
+xmlFile.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (!file.name.endsWith(".musicxml") && !file.name.endsWith(".xml")) {
+    alert("Only .musicxml file type are allowed.");
+    xmlFile.value = ""; //clear
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const measures = musicxmlToJianpu(ev.target.result);
+    if (measures.length > 0 && measures[0].tokens) {
+      input.value = measures.map(m => m.tokens.join(" ")).join(" | ");
+    } else {
+      input.value = measures.map(m => m.join(" ")).join(" | ");
+    }
+    renderJianpu(measures);
+  };
+  reader.readAsText(file);
+});
+
+input.addEventListener("input", () => {
+  const measures = parseLines(input.value); // fallback manual input
+  renderJianpu(measures);
+});
+
+
+// Init
+renderJianpu([]);
+</script>
+
+</body>
+</html>
